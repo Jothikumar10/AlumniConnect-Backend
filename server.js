@@ -10,6 +10,8 @@ const userRoutes = require("./routes/userRoutes");
 const commentRoutes = require("./routes/commentRoutes");
 const uploadRoutes = require("./routes/uploadRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const connectionRoutes = require("./routes/connectionRoutes");
+const followRoutes = require("./routes/followRoutes");
 
 const app = express();
 
@@ -30,10 +32,21 @@ app.get("/", (req, res) => {
 
 // Routes
 app.use("/api/auth", authRoutes);
+
 app.use("/api/posts", postRoutes);
+
 app.use("/api/users", userRoutes);
+
 app.use("/api/comments", commentRoutes);
+
 app.use("/api/notifications", notificationRoutes);
+
+// Connection routes
+app.use("/api/connections", connectionRoutes);
+
+// Follow routes
+app.use("/api/follows", followRoutes);
+
 // Cloudinary media upload routes
 app.use("/api/uploads", uploadRoutes);
 
@@ -41,5 +54,7 @@ app.use("/api/uploads", uploadRoutes);
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`AlumniConnect server running on port ${PORT}`);
+  console.log(
+    `AlumniConnect server running on port ${PORT}`
+  );
 });

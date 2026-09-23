@@ -1,19 +1,177 @@
 const express = require("express");
+const multer = require("multer");
 
 const {
   createPost,
   getPosts,
+  getUserPosts,
   getPostById,
   deletePost,
   likePost,
   unlikePost,
   savePost,
   unsavePost,
+  uploadPostMedia,
 } = require("../controllers/postController");
 
 const protect = require("../middleware/authMiddleware");
 
 const router = express.Router();
+
+/*
+|--------------------------------------------------------------------------
+| MULTER CONFIGURATION
+|--------------------------------------------------------------------------
+*/
+
+const storage = multer.memoryStorage();
+
+/*
+|--------------------------------------------------------------------------
+| ALLOWED FILE TYPES
+|--------------------------------------------------------------------------
+*/
+
+const allowedTypes = [
+  // Images
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+
+  // Videos
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/x-msvideo",
+  "video/x-matroska",
+  "video/mpeg",
+  "video/ogg",
+
+  // Audio
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/ogg",
+  "audio/mp4",
+  "audio/webm",
+  "audio/x-m4a",
+
+  // PDF
+  "application/pdf",
+
+  // Word
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
+  // Excel
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+  // PowerPoint
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+
+  // Text
+  "text/plain",
+];
+
+/*
+|--------------------------------------------------------------------------
+| FILE FILTER
+|--------------------------------------------------------------------------
+*/
+
+const fileFilter = (req, file, cb) => {
+  /*
+  |--------------------------------------------------------------------------
+  | Exact MIME type
+  |--------------------------------------------------------------------------
+  */
+
+  if (allowedTypes.includes(file.mimetype)) {
+    return cb(null, true);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Allow all video formats
+  |--------------------------------------------------------------------------
+  |
+  | This helps with MOV, MP4 and other browser MIME variations.
+  |
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    file.mimetype &&
+    file.mimetype.startsWith("video/")
+  ) {
+    return cb(null, true);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Allow all image formats
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    file.mimetype &&
+    file.mimetype.startsWith("image/")
+  ) {
+    return cb(null, true);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Allow all audio formats
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    file.mimetype &&
+    file.mimetype.startsWith("audio/")
+  ) {
+    return cb(null, true);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Reject unsupported file
+  |--------------------------------------------------------------------------
+  */
+
+  return cb(
+    new Error(
+      "This file type is not supported. Please upload an image, video, audio, or document."
+    ),
+    false
+  );
+};
+
+/*
+|--------------------------------------------------------------------------
+| MULTER UPLOAD
+|--------------------------------------------------------------------------
+|
+| Maximum file size:
+|
+| 500 MB
+|
+|--------------------------------------------------------------------------
+*/
+
+const upload = multer({
+  storage,
+
+  limits: {
+    fileSize: 500 * 1024 * 1024,
+  },
+
+  fileFilter,
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -27,11 +185,50 @@ const router = express.Router();
 |--------------------------------------------------------------------------
 | GET /api/posts
 |--------------------------------------------------------------------------
-| No login required.
+*/
+
+router.get(
+  "/",
+  getPosts
+);
+
+/*
+|--------------------------------------------------------------------------
+| Get Posts By User
+|--------------------------------------------------------------------------
+| GET /api/posts/user/:userId
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| Must come before "/:id".
 |--------------------------------------------------------------------------
 */
 
-router.get("/", getPosts);
+router.get(
+  "/user/:userId",
+  getUserPosts
+);
+
+/*
+|--------------------------------------------------------------------------
+| UPLOAD POST MEDIA
+|--------------------------------------------------------------------------
+| POST /api/posts/upload-media
+|--------------------------------------------------------------------------
+|
+| FormData:
+|
+| file = image/video/audio/document
+|
+|--------------------------------------------------------------------------
+*/
+
+router.post(
+  "/upload-media",
+  protect,
+  upload.single("file"),
+  uploadPostMedia
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -39,11 +236,12 @@ router.get("/", getPosts);
 |--------------------------------------------------------------------------
 | GET /api/posts/:id
 |--------------------------------------------------------------------------
-| No login required.
-|--------------------------------------------------------------------------
 */
 
-router.get("/:id", getPostById);
+router.get(
+  "/:id",
+  getPostById
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -127,8 +325,6 @@ router.delete(
 |--------------------------------------------------------------------------
 | DELETE /api/posts/:id
 |--------------------------------------------------------------------------
-| Only the post owner can delete it.
-|--------------------------------------------------------------------------
 */
 
 router.delete(
@@ -139,7 +335,74 @@ router.delete(
 
 /*
 |--------------------------------------------------------------------------
-| Export Router
+| MULTER ERROR HANDLER
+|--------------------------------------------------------------------------
+|
+| Returns JSON instead of Express HTML error page.
+|--------------------------------------------------------------------------
+*/
+
+router.use(
+  (error, req, res, next) => {
+    console.error(
+      "Post upload error:",
+      error
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | File too large
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      error instanceof multer.MulterError &&
+      error.code === "LIMIT_FILE_SIZE"
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "File is too large. Maximum allowed size is 500 MB.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Other Multer errors
+    |--------------------------------------------------------------------------
+    */
+
+    if (error instanceof multer.MulterError) {
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "File upload failed.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | File filter / other errors
+    |--------------------------------------------------------------------------
+    */
+
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        message:
+          error.message ||
+          "File upload failed.",
+      });
+    }
+
+    next();
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| EXPORT
 |--------------------------------------------------------------------------
 */
 

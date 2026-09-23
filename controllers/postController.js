@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Post = require("../models/Post");
 const createNotification = require("../utils/createNotification");
+const cloudinary = require("../config/cloudinary");
 
 /*
 |--------------------------------------------------------------------------
@@ -38,9 +39,7 @@ const extractHashtags = (content = "") => {
 
   return [
     ...new Set(
-      matches.map((tag) =>
-        tag.toLowerCase()
-      )
+      matches.map((tag) => tag.toLowerCase())
     ),
   ];
 };
@@ -53,9 +52,7 @@ const extractHashtags = (content = "") => {
 
 const extractMentions = (content = "") => {
   const matches =
-    String(content).match(
-      /@[a-zA-Z0-9_]+/g
-    ) || [];
+    String(content).match(/@[a-zA-Z0-9_]+/g) || [];
 
   return [
     ...new Set(
@@ -85,9 +82,7 @@ const normalizePoll = (poll) => {
     return null;
   }
 
-  const options = Array.isArray(
-    poll.options
-  )
+  const options = Array.isArray(poll.options)
     ? poll.options
         .map((option) => {
           if (typeof option === "string") {
@@ -225,6 +220,273 @@ const populateAuthor = async (post) => {
 
 /*
 |--------------------------------------------------------------------------
+| Helper: Get Media Type
+|--------------------------------------------------------------------------
+*/
+
+const getMediaType = (mimetype = "") => {
+  if (mimetype.startsWith("image/")) {
+    return "image";
+  }
+
+  if (mimetype.startsWith("video/")) {
+    return "video";
+  }
+
+  if (mimetype.startsWith("audio/")) {
+    return "audio";
+  }
+
+  return "document";
+};
+
+/*
+|--------------------------------------------------------------------------
+| Helper: Upload Buffer To Cloudinary
+|--------------------------------------------------------------------------
+*/
+
+const uploadToCloudinary = (
+  buffer,
+  options = {}
+) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream =
+      cloudinary.uploader.upload_stream(
+        options,
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
+      );
+
+    uploadStream.end(buffer);
+  });
+};
+
+/*
+|--------------------------------------------------------------------------
+| UPLOAD POST MEDIA
+|--------------------------------------------------------------------------
+| POST /api/posts/upload-media
+|--------------------------------------------------------------------------
+| Authentication required.
+|--------------------------------------------------------------------------
+|
+| Supports:
+| - Images
+| - Videos
+| - Audio
+| - Documents
+|--------------------------------------------------------------------------
+*/
+
+const uploadPostMedia = async (
+  req,
+  res
+) => {
+  try {
+    /*
+    |--------------------------------------------------------------------------
+    | Authentication
+    |--------------------------------------------------------------------------
+    */
+
+    const userId =
+      getAuthenticatedUserId(req);
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message:
+          "Authentication required. Please login first.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Check File
+    |--------------------------------------------------------------------------
+    */
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Please select a file to upload.",
+      });
+    }
+
+    const {
+      mimetype,
+      originalname,
+      size,
+      buffer,
+    } = req.file;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Maximum File Size
+    |--------------------------------------------------------------------------
+    */
+
+    const maxFileSize =
+      50 * 1024 * 1024;
+
+    if (size > maxFileSize) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "File size must be 50 MB or less.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Allowed MIME Types
+    |--------------------------------------------------------------------------
+    */
+
+    const allowedMimeTypes = [
+      // Images
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+
+      // Videos
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+
+      // Audio
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/wav",
+      "audio/ogg",
+
+      // Documents
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain",
+    ];
+
+    if (
+      !allowedMimeTypes.includes(
+        mimetype
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "This file type is not supported.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Detect Media Type
+    |--------------------------------------------------------------------------
+    */
+
+    const mediaType =
+      getMediaType(mimetype);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cloudinary Resource Type
+    |--------------------------------------------------------------------------
+    */
+
+    let resourceType = "raw";
+
+    if (mediaType === "image") {
+      resourceType = "image";
+    }
+
+    if (
+      mediaType === "video" ||
+      mediaType === "audio"
+    ) {
+      resourceType = "video";
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Upload To Cloudinary
+    |--------------------------------------------------------------------------
+    */
+
+    const uploadResult =
+      await uploadToCloudinary(
+        buffer,
+        {
+          folder:
+            "alumniconnect/posts",
+
+          resource_type:
+            resourceType,
+
+          use_filename: true,
+
+          unique_filename: true,
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
+
+    return res.status(201).json({
+      success: true,
+
+      message:
+        "Post media uploaded successfully.",
+
+      data: {
+        type: mediaType,
+
+        url:
+          uploadResult.secure_url,
+
+        publicId:
+          uploadResult.public_id,
+
+        name:
+          originalname,
+
+        resourceType,
+      },
+    });
+  } catch (error) {
+    console.error(
+      "Upload post media error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Failed to upload post media.",
+
+      error: error.message,
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | CREATE POST
 |--------------------------------------------------------------------------
 | POST /api/posts
@@ -233,7 +495,10 @@ const populateAuthor = async (post) => {
 |--------------------------------------------------------------------------
 */
 
-const createPost = async (req, res) => {
+const createPost = async (
+  req,
+  res
+) => {
   try {
     const userId =
       getAuthenticatedUserId(req);
@@ -294,6 +559,12 @@ const createPost = async (req, res) => {
         event.title || ""
       ).trim().length > 0;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Empty Post Check
+    |--------------------------------------------------------------------------
+    */
+
     if (
       !hasContent &&
       !hasMedia &&
@@ -309,6 +580,12 @@ const createPost = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Allowed Post Types
+    |--------------------------------------------------------------------------
+    */
+
     const allowedTypes = [
       "post",
       "career",
@@ -322,6 +599,12 @@ const createPost = async (req, res) => {
       allowedTypes.includes(type)
         ? type
         : "post";
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hashtags
+    |--------------------------------------------------------------------------
+    */
 
     const contentHashtags =
       extractHashtags(
@@ -347,6 +630,12 @@ const createPost = async (req, res) => {
       ]),
     ];
 
+    /*
+    |--------------------------------------------------------------------------
+    | Mentions
+    |--------------------------------------------------------------------------
+    */
+
     const contentMentions =
       extractMentions(
         cleanContent
@@ -369,6 +658,12 @@ const createPost = async (req, res) => {
         ...providedMentions,
       ]),
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Poll
+    |--------------------------------------------------------------------------
+    */
 
     let normalizedPoll = null;
 
@@ -395,6 +690,12 @@ const createPost = async (req, res) => {
       }
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Media
+    |--------------------------------------------------------------------------
+    */
+
     const cleanMedia =
       Array.isArray(media)
         ? media
@@ -408,14 +709,22 @@ const createPost = async (req, res) => {
             )
             .map((item) => ({
               type: item.type,
+
               url: String(
                 item.url
               ).trim(),
+
               name: String(
                 item.name || ""
               ).trim(),
             }))
         : [];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Link
+    |--------------------------------------------------------------------------
+    */
 
     const cleanLink =
       typeof link === "string" &&
@@ -423,11 +732,29 @@ const createPost = async (req, res) => {
         ? link.trim()
         : null;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Job
+    |--------------------------------------------------------------------------
+    */
+
     const cleanJob =
       normalizeJob(job);
 
+    /*
+    |--------------------------------------------------------------------------
+    | Event
+    |--------------------------------------------------------------------------
+    */
+
     const cleanEvent =
       normalizeEvent(event);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Create Post
+    |--------------------------------------------------------------------------
+    */
 
     const postData = {
       author: userId,
@@ -466,7 +793,19 @@ const createPost = async (req, res) => {
         postData
       );
 
+    /*
+    |--------------------------------------------------------------------------
+    | Populate Author
+    |--------------------------------------------------------------------------
+    */
+
     await populateAuthor(post);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
 
     return res.status(201).json({
       success: true,
@@ -501,7 +840,10 @@ const createPost = async (req, res) => {
 |--------------------------------------------------------------------------
 */
 
-const getPosts = async (req, res) => {
+const getPosts = async (
+  req,
+  res
+) => {
   try {
     const page = Math.max(
       Number.parseInt(
@@ -533,12 +875,30 @@ const getPosts = async (req, res) => {
 
     const filter = {};
 
+    /*
+    |--------------------------------------------------------------------------
+    | Status Filter
+    |--------------------------------------------------------------------------
+    */
+
     filter.status =
       status || "published";
+
+    /*
+    |--------------------------------------------------------------------------
+    | Type Filter
+    |--------------------------------------------------------------------------
+    */
 
     if (type) {
       filter.type = type;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Hashtag Filter
+    |--------------------------------------------------------------------------
+    */
 
     if (hashtag) {
       const cleanHashtag =
@@ -553,6 +913,12 @@ const getPosts = async (req, res) => {
       }
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Get Posts
+    |--------------------------------------------------------------------------
+    */
+
     const posts =
       await Post.find(filter)
         .populate(
@@ -566,6 +932,12 @@ const getPosts = async (req, res) => {
         .limit(limit)
         .lean();
 
+    /*
+    |--------------------------------------------------------------------------
+    | Count
+    |--------------------------------------------------------------------------
+    */
+
     const totalPosts =
       await Post.countDocuments(
         filter
@@ -575,6 +947,12 @@ const getPosts = async (req, res) => {
       Math.ceil(
         totalPosts / limit
       );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
 
     return res.status(200).json({
       success: true,
@@ -616,6 +994,157 @@ const getPosts = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
+| GET USER POSTS
+|--------------------------------------------------------------------------
+| GET /api/posts/user/:userId
+|--------------------------------------------------------------------------
+*/
+
+const getUserPosts = async (
+  req,
+  res
+) => {
+  try {
+    const { userId } =
+      req.params;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate User ID
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      !isValidObjectId(userId)
+    ) {
+      return res.status(400).json({
+        success: false,
+
+        message:
+          "Invalid user ID.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Pagination
+    |--------------------------------------------------------------------------
+    */
+
+    const page = Math.max(
+      Number.parseInt(
+        req.query.page,
+        10
+      ) || 1,
+      1
+    );
+
+    const limit = Math.min(
+      Math.max(
+        Number.parseInt(
+          req.query.limit,
+          10
+        ) || 10,
+        1
+      ),
+      50
+    );
+
+    const skip =
+      (page - 1) * limit;
+
+    /*
+    |--------------------------------------------------------------------------
+    | Filter
+    |--------------------------------------------------------------------------
+    */
+
+    const filter = {
+      author: userId,
+      status: "published",
+    };
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get User Posts
+    |--------------------------------------------------------------------------
+    */
+
+    const posts =
+      await Post.find(filter)
+        .populate(
+          "author",
+          "name email profileImage role company graduationYear"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+    /*
+    |--------------------------------------------------------------------------
+    | Count
+    |--------------------------------------------------------------------------
+    */
+
+    const totalPosts =
+      await Post.countDocuments(
+        filter
+      );
+
+    const totalPages =
+      Math.ceil(
+        totalPosts / limit
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "User posts fetched successfully.",
+
+      pagination: {
+        page,
+        limit,
+        totalPosts,
+        totalPages,
+
+        hasNextPage:
+          page < totalPages,
+
+        hasPreviousPage:
+          page > 1,
+      },
+
+      posts,
+    });
+  } catch (error) {
+    console.error(
+      "Get user posts error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+
+      message:
+        "Failed to fetch user posts.",
+
+      error: error.message,
+    });
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
 | GET SINGLE POST
 |--------------------------------------------------------------------------
 | GET /api/posts/:id
@@ -635,6 +1164,7 @@ const getPostById = async (
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Invalid post ID.",
       });
@@ -646,6 +1176,7 @@ const getPostById = async (
     if (!post) {
       return res.status(404).json({
         success: false,
+
         message:
           "Post not found.",
       });
@@ -684,8 +1215,6 @@ const getPostById = async (
 |--------------------------------------------------------------------------
 | DELETE /api/posts/:id
 |--------------------------------------------------------------------------
-| Only post owner can delete.
-|--------------------------------------------------------------------------
 */
 
 const deletePost = async (
@@ -702,6 +1231,7 @@ const deletePost = async (
     if (!userId) {
       return res.status(401).json({
         success: false,
+
         message:
           "Authentication required. Please login first.",
       });
@@ -712,6 +1242,7 @@ const deletePost = async (
     ) {
       return res.status(400).json({
         success: false,
+
         message:
           "Invalid post ID.",
       });
@@ -723,6 +1254,7 @@ const deletePost = async (
     if (!post) {
       return res.status(404).json({
         success: false,
+
         message:
           "Post not found.",
       });
@@ -741,9 +1273,7 @@ const deletePost = async (
       });
     }
 
-    await Post.findByIdAndDelete(
-      id
-    );
+    await Post.findByIdAndDelete(id);
 
     return res.status(200).json({
       success: true,
@@ -1008,12 +1538,6 @@ const savePost = async (
     const { id } =
       req.params;
 
-    /*
-    |--------------------------------------------------------------------------
-    | Authentication
-    |--------------------------------------------------------------------------
-    */
-
     const userId =
       getAuthenticatedUserId(req);
 
@@ -1026,12 +1550,6 @@ const savePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Validate Post ID
-    |--------------------------------------------------------------------------
-    */
-
     if (
       !isValidObjectId(id)
     ) {
@@ -1042,12 +1560,6 @@ const savePost = async (
           "Invalid post ID.",
       });
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Find Post
-    |--------------------------------------------------------------------------
-    */
 
     const post =
       await Post.findById(id);
@@ -1061,21 +1573,9 @@ const savePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Make Sure savedBy Is An Array
-    |--------------------------------------------------------------------------
-    */
-
     if (!Array.isArray(post.savedBy)) {
       post.savedBy = [];
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Check Existing Save
-    |--------------------------------------------------------------------------
-    */
 
     const alreadySaved =
       post.savedBy.some(
@@ -1099,29 +1599,11 @@ const savePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Add Save
-    |--------------------------------------------------------------------------
-    */
-
     post.savedBy.push(userId);
 
     await post.save();
 
-    /*
-    |--------------------------------------------------------------------------
-    | Populate Author
-    |--------------------------------------------------------------------------
-    */
-
     await populateAuthor(post);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Response
-    |--------------------------------------------------------------------------
-    */
 
     return res.status(200).json({
       success: true,
@@ -1169,12 +1651,6 @@ const unsavePost = async (
     const { id } =
       req.params;
 
-    /*
-    |--------------------------------------------------------------------------
-    | Authentication
-    |--------------------------------------------------------------------------
-    */
-
     const userId =
       getAuthenticatedUserId(req);
 
@@ -1187,12 +1663,6 @@ const unsavePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Validate Post ID
-    |--------------------------------------------------------------------------
-    */
-
     if (
       !isValidObjectId(id)
     ) {
@@ -1203,12 +1673,6 @@ const unsavePost = async (
           "Invalid post ID.",
       });
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Find Post
-    |--------------------------------------------------------------------------
-    */
 
     const post =
       await Post.findById(id);
@@ -1222,21 +1686,9 @@ const unsavePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Make Sure savedBy Is An Array
-    |--------------------------------------------------------------------------
-    */
-
     if (!Array.isArray(post.savedBy)) {
       post.savedBy = [];
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Check Existing Save
-    |--------------------------------------------------------------------------
-    */
 
     const alreadySaved =
       post.savedBy.some(
@@ -1260,12 +1712,6 @@ const unsavePost = async (
       });
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Remove Save
-    |--------------------------------------------------------------------------
-    */
-
     post.savedBy =
       post.savedBy.filter(
         (savedUser) =>
@@ -1276,19 +1722,7 @@ const unsavePost = async (
 
     await post.save();
 
-    /*
-    |--------------------------------------------------------------------------
-    | Populate Author
-    |--------------------------------------------------------------------------
-    */
-
     await populateAuthor(post);
-
-    /*
-    |--------------------------------------------------------------------------
-    | Response
-    |--------------------------------------------------------------------------
-    */
 
     return res.status(200).json({
       success: true,
@@ -1329,10 +1763,12 @@ const unsavePost = async (
 module.exports = {
   createPost,
   getPosts,
+  getUserPosts,
   getPostById,
   deletePost,
   likePost,
   unlikePost,
   savePost,
   unsavePost,
+  uploadPostMedia,
 };
