@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const Post = require("../models/Post");
+const Follow = require("../models/Follow");
 const createNotification = require("../utils/createNotification");
 const cloudinary = require("../config/cloudinary");
 
@@ -265,6 +266,80 @@ const uploadToCloudinary = (
 
     uploadStream.end(buffer);
   });
+};
+
+/*
+|--------------------------------------------------------------------------
+| Helper: Notify Followers About New Post
+|--------------------------------------------------------------------------
+*/
+
+const notifyFollowersAboutNewPost = async (
+  userId,
+  post
+) => {
+  try {
+    const follows = await Follow.find({
+      following: userId,
+    }).select("follower");
+
+    if (!follows.length) {
+      return;
+    }
+
+    const authorName =
+      post?.author?.name ||
+      "Someone";
+
+    await Promise.all(
+      follows.map((follow) =>
+        createNotification({
+          recipient: follow.follower,
+          sender: userId,
+          type: "new_post",
+          title: "New Post",
+          message: `${authorName} created a new post.`,
+          post: post._id,
+        })
+      )
+    );
+  } catch (error) {
+    console.error(
+      "Notify followers about new post error:",
+      error
+    );
+  }
+};
+
+/*
+|--------------------------------------------------------------------------
+| Helper: Notify Post Author About Like
+|--------------------------------------------------------------------------
+*/
+
+const notifyPostAuthorAboutLike = async (
+  post,
+  userId
+) => {
+  try {
+    if (!post || !post.author) {
+      return;
+    }
+
+    await createNotification({
+      recipient: post.author,
+      sender: userId,
+      type: "like",
+      title: "Post Liked",
+      message: "Someone liked your post.",
+      post: post._id,
+    });
+  } catch (error) {
+    console.error(
+      "Notify post author about like error:",
+      error
+    );
+  }
 };
 
 /*
@@ -800,6 +875,17 @@ const createPost = async (
     */
 
     await populateAuthor(post);
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Followers
+    |--------------------------------------------------------------------------
+    */
+
+    await notifyFollowersAboutNewPost(
+      userId,
+      post
+    );
 
     /*
     |--------------------------------------------------------------------------
@@ -1376,6 +1462,17 @@ const likePost = async (
     post.likes.push(userId);
 
     await post.save();
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Post Author
+    |--------------------------------------------------------------------------
+    */
+
+    await notifyPostAuthorAboutLike(
+      post,
+      userId
+    );
 
     await populateAuthor(post);
 

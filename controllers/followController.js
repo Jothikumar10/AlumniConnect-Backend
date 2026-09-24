@@ -1,11 +1,13 @@
 const Follow = require("../models/Follow");
 const User = require("../models/User");
+const Notification = require("../models/Notification");
 
 /*
 |--------------------------------------------------------------------------
 | Follow User
 |--------------------------------------------------------------------------
 | POST /api/follows/:userId
+|--------------------------------------------------------------------------
 */
 const followUser = async (req, res) => {
   try {
@@ -19,19 +21,26 @@ const followUser = async (req, res) => {
       });
     }
 
-    // Cannot follow yourself
-    if (
-      followerId.toString() ===
-      followingId.toString()
-    ) {
+    /*
+    |--------------------------------------------------------------------------
+    | Cannot follow yourself
+    |--------------------------------------------------------------------------
+    */
+    if (followerId.toString() === followingId.toString()) {
       return res.status(400).json({
         success: false,
         message: "You cannot follow yourself.",
       });
     }
 
-    // Check if user exists
-    const user = await User.findById(followingId);
+    /*
+    |--------------------------------------------------------------------------
+    | Check if user exists
+    |--------------------------------------------------------------------------
+    */
+    const user = await User.findById(followingId).select(
+      "name profileImage role jobRole company isActive"
+    );
 
     if (!user) {
       return res.status(404).json({
@@ -40,7 +49,23 @@ const followUser = async (req, res) => {
       });
     }
 
-    // Check existing follow
+    /*
+    |--------------------------------------------------------------------------
+    | Check if target user is active
+    |--------------------------------------------------------------------------
+    */
+    if (user.isActive === false) {
+      return res.status(403).json({
+        success: false,
+        message: "This user account is inactive.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Check existing follow
+    |--------------------------------------------------------------------------
+    */
     const existingFollow = await Follow.findOne({
       follower: followerId,
       following: followingId,
@@ -53,11 +78,45 @@ const followUser = async (req, res) => {
       });
     }
 
-    // Create follow
+    /*
+    |--------------------------------------------------------------------------
+    | Create follow
+    |--------------------------------------------------------------------------
+    */
     const follow = await Follow.create({
       follower: followerId,
       following: followingId,
     });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Create notification
+    |--------------------------------------------------------------------------
+    |
+    | Example:
+    |
+    | Jothikumar started following you.
+    |
+    */
+    try {
+      await Notification.create({
+        recipient: followingId,
+        sender: followerId,
+        type: "follower",
+        title: "New Follower",
+        message: `${req.user.name || "Someone"} started following you.`,
+      });
+    } catch (notificationError) {
+      /*
+      |--------------------------------------------------------------------------
+      | Do not fail the follow operation if notification creation fails
+      |--------------------------------------------------------------------------
+      */
+      console.error(
+        "Create follow notification error:",
+        notificationError
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -75,12 +134,12 @@ const followUser = async (req, res) => {
   }
 };
 
-
 /*
 |--------------------------------------------------------------------------
 | Unfollow User
 |--------------------------------------------------------------------------
 | DELETE /api/follows/:userId
+|--------------------------------------------------------------------------
 */
 const unfollowUser = async (req, res) => {
   try {
@@ -94,6 +153,23 @@ const unfollowUser = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Cannot unfollow yourself
+    |--------------------------------------------------------------------------
+    */
+    if (followerId.toString() === followingId.toString()) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Delete follow
+    |--------------------------------------------------------------------------
+    */
     const follow = await Follow.findOneAndDelete({
       follower: followerId,
       following: followingId,
@@ -104,6 +180,29 @@ const unfollowUser = async (req, res) => {
         success: false,
         message: "You are not following this user.",
       });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Optional:
+    | Remove the unread follower notification created by this follow.
+    |
+    | This prevents an old "started following you" notification from
+    | remaining unread after the user has already unfollowed.
+    |--------------------------------------------------------------------------
+    */
+    try {
+      await Notification.deleteOne({
+        recipient: followingId,
+        sender: followerId,
+        type: "follower",
+        isRead: false,
+      });
+    } catch (notificationError) {
+      console.error(
+        "Delete follow notification error:",
+        notificationError
+      );
     }
 
     return res.status(200).json({
@@ -121,12 +220,12 @@ const unfollowUser = async (req, res) => {
   }
 };
 
-
 /*
 |--------------------------------------------------------------------------
 | Get Follow Status
 |--------------------------------------------------------------------------
 | GET /api/follows/status/:userId
+|--------------------------------------------------------------------------
 */
 const getFollowStatus = async (req, res) => {
   try {
@@ -140,11 +239,12 @@ const getFollowStatus = async (req, res) => {
       });
     }
 
-    // Own profile
-    if (
-      followerId.toString() ===
-      followingId.toString()
-    ) {
+    /*
+    |--------------------------------------------------------------------------
+    | Own profile
+    |--------------------------------------------------------------------------
+    */
+    if (followerId.toString() === followingId.toString()) {
       return res.status(200).json({
         success: true,
         following: false,
@@ -153,6 +253,11 @@ const getFollowStatus = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Check follow
+    |--------------------------------------------------------------------------
+    */
     const follow = await Follow.findOne({
       follower: followerId,
       following: followingId,
@@ -165,10 +270,7 @@ const getFollowStatus = async (req, res) => {
       follow: follow || null,
     });
   } catch (error) {
-    console.error(
-      "Get follow status error:",
-      error
-    );
+    console.error("Get follow status error:", error);
 
     return res.status(500).json({
       success: false,
@@ -178,12 +280,12 @@ const getFollowStatus = async (req, res) => {
   }
 };
 
-
 /*
 |--------------------------------------------------------------------------
 | Get Followers
 |--------------------------------------------------------------------------
 | GET /api/follows/followers/:userId
+|--------------------------------------------------------------------------
 */
 const getFollowers = async (req, res) => {
   try {
@@ -196,6 +298,25 @@ const getFollowers = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Check user exists
+    |--------------------------------------------------------------------------
+    */
+    const user = await User.findById(userId).select("_id");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get followers
+    |--------------------------------------------------------------------------
+    */
     const followers = await Follow.find({
       following: userId,
     })
@@ -213,10 +334,7 @@ const getFollowers = async (req, res) => {
       followers,
     });
   } catch (error) {
-    console.error(
-      "Get followers error:",
-      error
-    );
+    console.error("Get followers error:", error);
 
     return res.status(500).json({
       success: false,
@@ -225,7 +343,6 @@ const getFollowers = async (req, res) => {
     });
   }
 };
-
 
 /*
 |--------------------------------------------------------------------------
@@ -245,6 +362,25 @@ const getFollowing = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Check user exists
+    |--------------------------------------------------------------------------
+    */
+    const user = await User.findById(userId).select("_id");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Get following users
+    |--------------------------------------------------------------------------
+    */
     const following = await Follow.find({
       follower: userId,
     })
@@ -262,10 +398,7 @@ const getFollowing = async (req, res) => {
       following,
     });
   } catch (error) {
-    console.error(
-      "Get following error:",
-      error
-    );
+    console.error("Get following error:", error);
 
     return res.status(500).json({
       success: false,
@@ -275,7 +408,11 @@ const getFollowing = async (req, res) => {
   }
 };
 
-
+/*
+|--------------------------------------------------------------------------
+| Export Controllers
+|--------------------------------------------------------------------------
+*/
 module.exports = {
   followUser,
   unfollowUser,

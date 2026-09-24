@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const Comment = require("../models/Comment");
 const Post = require("../models/Post");
+const createNotification = require("../utils/createNotification");
 
 /*
 |--------------------------------------------------------------------------
@@ -61,7 +62,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate user ID
+    | Validate User ID
     |--------------------------------------------------------------------------
     */
 
@@ -74,7 +75,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate post ID
+    | Validate Post ID
     |--------------------------------------------------------------------------
     */
 
@@ -87,7 +88,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate content
+    | Validate Content
     |--------------------------------------------------------------------------
     */
 
@@ -109,7 +110,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Check post
+    | Check Post
     |--------------------------------------------------------------------------
     */
 
@@ -124,7 +125,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Create comment
+    | Create Comment
     |--------------------------------------------------------------------------
     */
 
@@ -136,7 +137,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Increase post comment count
+    | Increase Post Comment Count
     |--------------------------------------------------------------------------
     */
 
@@ -154,7 +155,7 @@ const createComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Populate author
+    | Populate Comment Author
     |--------------------------------------------------------------------------
     */
 
@@ -162,6 +163,23 @@ const createComment = async (req, res) => {
       "author",
       "name profileImage role company graduationYear"
     );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Post Owner
+    |--------------------------------------------------------------------------
+    */
+
+    await createNotification({
+      recipient: post.author,
+      sender: userId,
+      type: "comment",
+      title: "New Comment",
+      message: `${
+        comment.author?.name || "Someone"
+      } commented on your post.`,
+      post: post._id,
+    });
 
     /*
     |--------------------------------------------------------------------------
@@ -203,7 +221,7 @@ const getComments = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate post ID
+    | Validate Post ID
     |--------------------------------------------------------------------------
     */
 
@@ -216,7 +234,7 @@ const getComments = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Check post
+    | Check Post
     |--------------------------------------------------------------------------
     */
 
@@ -254,7 +272,7 @@ const getComments = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Get comments
+    | Get Comments
     |--------------------------------------------------------------------------
     */
 
@@ -274,7 +292,7 @@ const getComments = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Total comments
+    | Total Comments
     |--------------------------------------------------------------------------
     */
 
@@ -307,7 +325,8 @@ const getComments = async (req, res) => {
 
       comments,
 
-      commentsCount: post.comments || totalComments,
+      commentsCount:
+        post.comments || totalComments,
     });
   } catch (error) {
     console.error("Get comments error:", error);
@@ -345,7 +364,7 @@ const deleteComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate IDs
+    | Validate User ID
     |--------------------------------------------------------------------------
     */
 
@@ -356,6 +375,12 @@ const deleteComment = async (req, res) => {
       });
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Comment ID
+    |--------------------------------------------------------------------------
+    */
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -365,7 +390,7 @@ const deleteComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Find comment
+    | Find Comment
     |--------------------------------------------------------------------------
     */
 
@@ -380,7 +405,7 @@ const deleteComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Check ownership
+    | Check Ownership
     |--------------------------------------------------------------------------
     */
 
@@ -390,7 +415,8 @@ const deleteComment = async (req, res) => {
     ) {
       return res.status(403).json({
         success: false,
-        message: "You are not allowed to delete this comment.",
+        message:
+          "You are not allowed to delete this comment.",
       });
     }
 
@@ -398,7 +424,7 @@ const deleteComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Delete comment
+    | Delete Comment
     |--------------------------------------------------------------------------
     */
 
@@ -406,7 +432,7 @@ const deleteComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Decrease post comment count safely
+    | Decrease Post Comment Count Safely
     |--------------------------------------------------------------------------
     */
 
@@ -470,12 +496,24 @@ const likeComment = async (req, res) => {
 
     const { id } = req.params;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validate User ID
+    |--------------------------------------------------------------------------
+    */
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({
         success: false,
         message: "Invalid authenticated user.",
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Comment ID
+    |--------------------------------------------------------------------------
+    */
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -486,7 +524,46 @@ const likeComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Add like
+    | Find Comment
+    |--------------------------------------------------------------------------
+    */
+
+    const existingComment = await Comment.findById(id);
+
+    if (!existingComment) {
+      return res.status(404).json({
+        success: false,
+        message: "Comment not found.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Check Existing Like
+    |--------------------------------------------------------------------------
+    */
+
+    const alreadyLiked =
+      Array.isArray(existingComment.likes) &&
+      existingComment.likes.some(
+        (like) =>
+          like &&
+          like.toString() === userId.toString()
+      );
+
+    if (alreadyLiked) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "You have already liked this comment.",
+        likesCount:
+          existingComment.likes.length,
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Add Like
     |--------------------------------------------------------------------------
     */
 
@@ -511,6 +588,30 @@ const likeComment = async (req, res) => {
         message: "Comment not found.",
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notify Comment Owner
+    |--------------------------------------------------------------------------
+    */
+
+    await createNotification({
+      recipient:
+        comment.author?._id ||
+        existingComment.author,
+      sender: userId,
+      type: "comment_like",
+      title: "Comment Liked",
+      message: `${
+        req.user?.name || "Someone"
+      } liked your comment.`,
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
 
     return res.status(200).json({
       success: true,
@@ -550,12 +651,24 @@ const unlikeComment = async (req, res) => {
 
     const { id } = req.params;
 
+    /*
+    |--------------------------------------------------------------------------
+    | Validate User ID
+    |--------------------------------------------------------------------------
+    */
+
     if (!mongoose.Types.ObjectId.isValid(userId)) {
       return res.status(401).json({
         success: false,
         message: "Invalid authenticated user.",
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Comment ID
+    |--------------------------------------------------------------------------
+    */
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -566,7 +679,7 @@ const unlikeComment = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Remove like
+    | Remove Like
     |--------------------------------------------------------------------------
     */
 
@@ -591,6 +704,12 @@ const unlikeComment = async (req, res) => {
         message: "Comment not found.",
       });
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Response
+    |--------------------------------------------------------------------------
+    */
 
     return res.status(200).json({
       success: true,
