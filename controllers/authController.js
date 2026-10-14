@@ -24,12 +24,15 @@ const generateToken = (userId, role) => {
 
 /*
 |--------------------------------------------------------------------------
-| REGISTER STUDENT
+| REGISTER USER
 |--------------------------------------------------------------------------
 | POST /api/auth/register
 |
-| Public registration is ONLY for students.
-| Alumni / Faculty / Admin must be created separately.
+| Public registration allows:
+| - Student
+| - Alumni
+|
+| Admin and Faculty cannot be created through public registration.
 |--------------------------------------------------------------------------
 */
 
@@ -39,39 +42,72 @@ const registerUser = async (req, res) => {
       name,
       email,
       password,
+      role = "student",
+
       department = "",
       graduationYear = null,
       college = "",
+
+      jobRole = "",
+      company = "",
+      location = "",
+      skills = [],
+      linkedin = "",
+      github = "",
+      portfolio = "",
     } = req.body;
 
     /*
     |--------------------------------------------------------------------------
-    | Validate required fields
+    | Validate Required Fields
     |--------------------------------------------------------------------------
     */
 
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        message:
-          "Name, email and password are required.",
+        message: "Name, email and password are required.",
       });
     }
 
     /*
     |--------------------------------------------------------------------------
-    | Clean values
+    | Validate Role
+    |--------------------------------------------------------------------------
+    |
+    | Public registration is allowed only for:
+    | student
+    | alumni
+    |
+    | Admin and faculty must be created separately.
+    |--------------------------------------------------------------------------
+    */
+
+    const cleanRole = String(role).trim().toLowerCase();
+
+    if (!["student", "alumni"].includes(cleanRole)) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Invalid registration role. Only Student and Alumni registration is allowed.",
+      });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Clean Values
     |--------------------------------------------------------------------------
     */
 
     const cleanName = String(name).trim();
+
     const cleanEmail = String(email)
       .trim()
       .toLowerCase();
 
     /*
     |--------------------------------------------------------------------------
-    | Validate name
+    | Validate Name
     |--------------------------------------------------------------------------
     */
 
@@ -84,7 +120,7 @@ const registerUser = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate password
+    | Validate Password
     |--------------------------------------------------------------------------
     */
 
@@ -98,12 +134,11 @@ const registerUser = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Validate email
+    | Validate Email
     |--------------------------------------------------------------------------
     */
 
-    const emailRegex =
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(cleanEmail)) {
       return res.status(400).json({
@@ -146,8 +181,8 @@ const registerUser = async (req, res) => {
 
       if (
         !Number.isInteger(year) ||
-        year < 2000 ||
-        year > 2100
+        year < 1950 ||
+        year > new Date().getFullYear() + 10
       ) {
         return res.status(400).json({
           success: false,
@@ -157,6 +192,57 @@ const registerUser = async (req, res) => {
 
       cleanGraduationYear = year;
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validate Alumni Information
+    |--------------------------------------------------------------------------
+    */
+
+    if (cleanRole === "alumni") {
+      if (!String(jobRole).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Current job role is required for Alumni.",
+        });
+      }
+
+      if (!String(company).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Company name is required for Alumni.",
+        });
+      }
+
+      if (!String(location).trim()) {
+        return res.status(400).json({
+          success: false,
+          message: "Current location is required for Alumni.",
+        });
+      }
+
+      if (
+        !Array.isArray(skills) ||
+        skills.length === 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "At least one skill is required for Alumni.",
+        });
+      }
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Clean Skills
+    |--------------------------------------------------------------------------
+    */
+
+    const cleanSkills = Array.isArray(skills)
+      ? skills
+          .map((skill) => String(skill).trim())
+          .filter(Boolean)
+      : [];
 
     /*
     |--------------------------------------------------------------------------
@@ -171,21 +257,7 @@ const registerUser = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
-    | Create STUDENT
-    |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    | Role is ALWAYS student here.
-    |
-    | We do NOT accept role from req.body.
-    |
-    | This prevents someone from sending:
-    |
-    | {
-    |   "role": "admin"
-    | }
-    |
-    | through the public registration API.
+    | Create User
     |--------------------------------------------------------------------------
     */
 
@@ -194,7 +266,9 @@ const registerUser = async (req, res) => {
       email: cleanEmail,
       password: hashedPassword,
 
-      role: "student",
+      // IMPORTANT
+      // This now saves either "student" or "alumni".
+      role: cleanRole,
 
       department: String(
         department || ""
@@ -205,6 +279,47 @@ const registerUser = async (req, res) => {
       college: String(
         college || ""
       ).trim(),
+
+      /*
+      |--------------------------------------------------------------------------
+      | Alumni Professional Information
+      |--------------------------------------------------------------------------
+      */
+
+      jobRole:
+        cleanRole === "alumni"
+          ? String(jobRole).trim()
+          : "",
+
+      company:
+        cleanRole === "alumni"
+          ? String(company).trim()
+          : "",
+
+      location:
+        cleanRole === "alumni"
+          ? String(location).trim()
+          : "",
+
+      skills:
+        cleanRole === "alumni"
+          ? cleanSkills
+          : [],
+
+      linkedin:
+        cleanRole === "alumni"
+          ? String(linkedin || "").trim()
+          : "",
+
+      github:
+        cleanRole === "alumni"
+          ? String(github || "").trim()
+          : "",
+
+      portfolio:
+        cleanRole === "alumni"
+          ? String(portfolio || "").trim()
+          : "",
     });
 
     /*
@@ -230,14 +345,24 @@ const registerUser = async (req, res) => {
 
     /*
     |--------------------------------------------------------------------------
+    | Response Message
+    |--------------------------------------------------------------------------
+    */
+
+    const message =
+      cleanRole === "alumni"
+        ? "Alumni account created successfully."
+        : "Student account created successfully.";
+
+    /*
+    |--------------------------------------------------------------------------
     | Response
     |--------------------------------------------------------------------------
     */
 
     return res.status(201).json({
       success: true,
-      message:
-        "Student account created successfully.",
+      message,
       token,
       user: userResponse,
     });
@@ -286,8 +411,7 @@ const registerUser = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to create student account.",
+      message: "Failed to create account.",
       error: error.message,
     });
   }
@@ -337,10 +461,6 @@ const loginUser = async (req, res) => {
     /*
     |--------------------------------------------------------------------------
     | Find User
-    |--------------------------------------------------------------------------
-    |
-    | Password is selected explicitly because
-    | User model may contain select:false.
     |--------------------------------------------------------------------------
     */
 
@@ -446,7 +566,7 @@ const loginUser = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| Get Current User
+| GET CURRENT USER
 |--------------------------------------------------------------------------
 | GET /api/auth/me
 |
@@ -483,7 +603,7 @@ const getCurrentUser = async (req, res) => {
 
 /*
 |--------------------------------------------------------------------------
-| Export
+| EXPORT
 |--------------------------------------------------------------------------
 */
 

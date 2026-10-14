@@ -18,7 +18,10 @@ const connectionRoutes = require("./routes/connectionRoutes");
 const followRoutes = require("./routes/followRoutes");
 const conversationRoutes = require("./routes/conversationRoutes");
 const messageRoutes = require("./routes/messageRoutes");
-
+const adminJobRoutes = require("./routes/adminJobRoutes");
+const jobRoutes = require("./routes/jobRoutes");
+const jobApplicationRoutes = require("./routes/jobApplicationRoutes");
+const path = require("path");
 const app = express();
 
 /*
@@ -244,6 +247,16 @@ app.use(
   messageRoutes
 );
 
+app.use("/api/admin/jobs", adminJobRoutes);
+
+app.use("/api/jobs", jobRoutes);
+
+app.use("/api/job-applications", jobApplicationRoutes);
+
+app.use(
+  "/uploads",
+  express.static(path.join(process.cwd(), "uploads"))
+);
 /*
 |--------------------------------------------------------------------------
 | Invalid JSON Error Handler

@@ -7,6 +7,7 @@ const userSchema = new mongoose.Schema(
     | Basic Information
     |--------------------------------------------------------------------------
     */
+
     name: {
       type: String,
       required: [true, "Name is required"],
@@ -35,22 +36,19 @@ const userSchema = new mongoose.Schema(
     | User Role
     |--------------------------------------------------------------------------
     */
+
     role: {
       type: String,
-      enum: [
-        "student",
-        "alumni",
-        "faculty",
-        "admin",
-      ],
+      enum: ["student", "alumni", "faculty", "admin"],
       default: "student",
     },
 
     /*
     |--------------------------------------------------------------------------
-    | Profile
+    | Profile Images
     |--------------------------------------------------------------------------
     */
+
     profileImage: {
       type: String,
       default: "",
@@ -60,6 +58,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Personal Information
+    |--------------------------------------------------------------------------
+    */
 
     bio: {
       type: String,
@@ -82,10 +86,23 @@ const userSchema = new mongoose.Schema(
 
     /*
     |--------------------------------------------------------------------------
-    | College Information
+    | College / Education Information
     |--------------------------------------------------------------------------
     */
+
+    degree: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
     department: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    college: {
       type: String,
       trim: true,
       default: "",
@@ -96,9 +113,17 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    college: {
+    cgpa: {
+      type: Number,
+      min: 0,
+      max: 10,
+      default: null,
+    },
+
+    educationDetails: {
       type: String,
       trim: true,
+      maxlength: 1000,
       default: "",
     },
 
@@ -107,6 +132,7 @@ const userSchema = new mongoose.Schema(
     | Professional Information
     |--------------------------------------------------------------------------
     */
+
     company: {
       type: String,
       trim: true,
@@ -119,7 +145,97 @@ const userSchema = new mongoose.Schema(
       default: "",
     },
 
+    experience: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    industry: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    employmentType: {
+      type: String,
+      enum: [
+        "",
+        "Full-time",
+        "Part-time",
+        "Internship",
+        "Freelance",
+        "Self-employed",
+        "Contract",
+        "Not Working",
+      ],
+      default: "",
+    },
+
+    careerStatus: {
+      type: String,
+      enum: [
+        "",
+        "Working",
+        "Open to Opportunities",
+        "Looking for Job",
+        "Student",
+        "Entrepreneur",
+        "Not Working",
+      ],
+      default: "",
+    },
+
+    previousCompany: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Skills
+    |--------------------------------------------------------------------------
+    */
+
     skills: {
+      type: [String],
+      default: [],
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Achievements & Certifications
+    |--------------------------------------------------------------------------
+    */
+
+    achievements: {
+      type: [String],
+      default: [],
+    },
+
+    certifications: {
+      type: [String],
+      default: [],
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Career Guidance
+    |--------------------------------------------------------------------------
+    */
+
+    mentorshipAvailable: {
+      type: Boolean,
+      default: false,
+    },
+
+    referralsAvailable: {
+      type: Boolean,
+      default: false,
+    },
+
+    mentorshipAreas: {
       type: [String],
       default: [],
     },
@@ -129,6 +245,7 @@ const userSchema = new mongoose.Schema(
     | Social Profiles
     |--------------------------------------------------------------------------
     */
+
     linkedin: {
       type: String,
       trim: true,
@@ -149,9 +266,38 @@ const userSchema = new mongoose.Schema(
 
     /*
     |--------------------------------------------------------------------------
+    | Additional Profile Information
+    |--------------------------------------------------------------------------
+    */
+
+    languages: {
+      type: [String],
+      default: [],
+    },
+
+    interests: {
+      type: [String],
+      default: [],
+    },
+
+    /*
+    |--------------------------------------------------------------------------
+    | Resume
+    |--------------------------------------------------------------------------
+    */
+
+    resumeUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+
+    /*
+    |--------------------------------------------------------------------------
     | Account Status
     |--------------------------------------------------------------------------
     */
+
     isActive: {
       type: Boolean,
       default: true,
@@ -172,6 +318,7 @@ const userSchema = new mongoose.Schema(
 | Indexes
 |--------------------------------------------------------------------------
 */
+
 userSchema.index({
   name: 1,
 });
@@ -192,9 +339,22 @@ userSchema.index({
   company: 1,
 });
 
+userSchema.index({
+  jobRole: 1,
+});
+
+userSchema.index({
+  industry: 1,
+});
+
+userSchema.index({
+  careerStatus: 1,
+});
+
 /*
 |--------------------------------------------------------------------------
 | Model
 |--------------------------------------------------------------------------
 */
+
 module.exports = mongoose.model("User", userSchema);

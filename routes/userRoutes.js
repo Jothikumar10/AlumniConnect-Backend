@@ -1,3 +1,4 @@
+
 const express = require("express");
 const multer = require("multer");
 
@@ -10,100 +11,52 @@ const {
   uploadCoverImage,
 } = require("../controllers/userController");
 
+const {
+  updateUserStatus,
+  updateAlumniVerification,
+} = require("../controllers/adminUserController");
+
 const protect = require("../middleware/authMiddleware");
+const adminOnly = require("../middleware/adminMiddleware");
 
 const router = express.Router();
-
-/*
-|--------------------------------------------------------------------------
-| Multer Configuration
-|--------------------------------------------------------------------------
-| Files are temporarily stored in memory.
-| They are then uploaded directly to Cloudinary.
-|--------------------------------------------------------------------------
-*/
 
 const storage = multer.memoryStorage();
 
 const upload = multer({
   storage,
-
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB
+    fileSize: 10 * 1024 * 1024,
   },
-
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only image files are allowed."));
+      return cb(null, true);
     }
+
+    return cb(new Error("Only image files are allowed."));
   },
 });
 
-/*
-|--------------------------------------------------------------------------
-| ALL USERS
-|--------------------------------------------------------------------------
-*/
+// Admin routes
+router.get("/", protect, adminOnly, getAllUsers);
 
-/*
-|--------------------------------------------------------------------------
-| Get All Users
-|--------------------------------------------------------------------------
-| GET /api/users
-|--------------------------------------------------------------------------
-| Used by the Users page.
-|--------------------------------------------------------------------------
-*/
-
-router.get(
-  "/",
+router.patch(
+  "/:userId/status",
   protect,
-  getAllUsers
+  adminOnly,
+  updateUserStatus
 );
 
-/*
-|--------------------------------------------------------------------------
-| MY PROFILE
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
-| Get Logged-in User Profile
-|--------------------------------------------------------------------------
-| GET /api/users/me
-|--------------------------------------------------------------------------
-*/
-
-router.get(
-  "/me",
+router.patch(
+  "/:userId/verification",
   protect,
-  getMyProfile
+  adminOnly,
+  updateAlumniVerification
 );
 
-/*
-|--------------------------------------------------------------------------
-| Update Logged-in User Profile
-|--------------------------------------------------------------------------
-| PUT /api/users/me
-|--------------------------------------------------------------------------
-*/
-
-router.put(
-  "/me",
-  protect,
-  updateMyProfile
-);
-
-/*
-|--------------------------------------------------------------------------
-| Upload Profile Image
-|--------------------------------------------------------------------------
-| POST /api/users/me/profile-image
-|--------------------------------------------------------------------------
-*/
+// Current user's profile
+router.get("/me", protect, getMyProfile);
+router.put("/me", protect, updateMyProfile);
 
 router.post(
   "/me/profile-image",
@@ -112,14 +65,6 @@ router.post(
   uploadProfileImage
 );
 
-/*
-|--------------------------------------------------------------------------
-| Upload Cover Image
-|--------------------------------------------------------------------------
-| POST /api/users/me/cover-image
-|--------------------------------------------------------------------------
-*/
-
 router.post(
   "/me/cover-image",
   protect,
@@ -127,30 +72,7 @@ router.post(
   uploadCoverImage
 );
 
-/*
-|--------------------------------------------------------------------------
-| OTHER USER PROFILE
-|--------------------------------------------------------------------------
-*/
-
-/*
-|--------------------------------------------------------------------------
-| Get Another User Profile
-|--------------------------------------------------------------------------
-| GET /api/users/:userId
-|--------------------------------------------------------------------------
-*/
-
-router.get(
-  "/:userId",
-  protect,
-  getUserProfile
-);
-
-/*
-|--------------------------------------------------------------------------
-| Export Router
-|--------------------------------------------------------------------------
-*/
+// Other user's profile
+router.get("/:userId", protect, getUserProfile);
 
 module.exports = router;
